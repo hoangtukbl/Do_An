@@ -121,9 +121,16 @@ async getAllHouses(page = 1, pageSize = 10) {
       throw new Error("Bạn không có quyền tạo nhà. Chỉ Seller và Admin mới có quyền này.");
     }
     
-    const houseData = { ...data, OwnerID: userId };
+    const houseData = { 
+      ...data, 
+      OwnerID: userId,
+      // Seller tạo nhà → Pending (cần duyệt)
+      // Admin tạo nhà → Approved (tự động duyệt)
+      ApprovalStatus: userRole === 'admin' ? 'Approved' : 'Pending'
+    };
     console.log('🔍 Debug createHouse - houseData.OwnerID:', houseData.OwnerID);
     console.log('🔍 Debug createHouse - typeof OwnerID:', typeof houseData.OwnerID);
+    console.log('🔍 Debug createHouse - ApprovalStatus:', houseData.ApprovalStatus);
     
     return HouseRepo.create(houseData);
   }

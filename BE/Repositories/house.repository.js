@@ -71,7 +71,10 @@ class HouseRepository {
   async findAllWithPagination(offset = 0, limit = 10) {
     try {
       const result = await houses.findAndCountAll({
-        where: { Status: "Available" }, // Sử dụng đúng enum value từ model
+        where: { 
+          Status: "Available",
+          ApprovalStatus: "Approved" // Chỉ hiển thị nhà đã được duyệt
+        },
         include: [
           { 
             model: houseimages, 
@@ -86,7 +89,7 @@ class HouseRepository {
         raw: false
       });
 
-      console.log(`🔍 Repository: findAllWithPagination - Found ${result.count} houses, returning ${result.rows.length} for page ${Math.floor(offset / limit) + 1}`);
+      console.log(`🔍 Repository: findAllWithPagination - Found ${result.count} approved houses, returning ${result.rows.length} for page ${Math.floor(offset / limit) + 1}`);
 
       return {
         data: result.rows,

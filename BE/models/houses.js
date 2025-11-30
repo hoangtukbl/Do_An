@@ -61,6 +61,31 @@ module.exports = function(sequelize, DataTypes) {
       defaultValue: "Available",
       comment: "Trạng thái"
     },
+    ApprovalStatus: {
+      type: DataTypes.ENUM('Pending','Approved','Rejected'),
+      allowNull: true,
+      defaultValue: "Pending",
+      comment: "Trạng thái duyệt bài"
+    },
+    RejectionReason: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+      comment: "Lý do từ chối"
+    },
+    ApprovedBy: {
+      type: DataTypes.BIGINT.UNSIGNED,
+      allowNull: true,
+      comment: "Admin đã duyệt (UserID)",
+      references: {
+        model: 'users',
+        key: 'UserID'
+      }
+    },
+    ApprovedAt: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      comment: "Thời gian duyệt"
+    },
     DriveFolderID: {
       type: DataTypes.STRING(255),
       allowNull: true,
@@ -111,6 +136,13 @@ module.exports = function(sequelize, DataTypes) {
         using: "BTREE",
         fields: [
           { name: "Status" },
+        ]
+      },
+      {
+        name: "idx_approval_status",
+        using: "BTREE",
+        fields: [
+          { name: "ApprovalStatus" },
         ]
       },
     ]

@@ -742,4 +742,237 @@ router.get('/admin/analytics', requireAdminAPI, (req, res) => {
     });
 });
 
+// ========== ADMIN HOUSES MANAGEMENT ==========
+
+// Get all houses with filters (including pending approval)
+router.get('/admin/houses', requireAdminAPI, async (req, res) => {
+    try {
+        const { 
+            approvalStatus, 
+            status, 
+            page = 1, 
+            pageSize = 10 
+        } = req.query;
+
+        const offset = (page - 1) * pageSize;
+        const limit = parseInt(pageSize);
+
+        let whereClause = '';
+        const params = [];
+
+        if (approvalStatus) {
+            whereClause += ' WHERE ApprovalStatus = ?';
+            params.push(approvalStatus);
+        }
+
+        if (status) {
+            whereClause += whereClause ? ' AND Status = ?' : ' WHERE Status = ?';
+            params.push(status);
+        }
+
+        // Count total
+        const [countResult] = await sequelize.query(
+            `SELECT COUNT(*) as total FROM houses${whereClause}`,
+            { replacements: params }
+        );
+        const total = countResult[0].total;
+
+        // Get houses with owner info
+        const [houses] = await sequelize.query(`
+            SELECT 
+                h.*,
+                u.FullName as OwnerName,
+                u.Email as OwnerEmail,
+                u.Role as OwnerRole,
+                approver.FullName as ApproverName
+            FROM houses h
+            LEFT JOIN users u ON h.OwnerID = u.UserID
+            LEFT JOIN users approver ON h.ApprovedBy = approver.UserID
+            ${whereClause}
+            ORDER BY h.createdAt DESC
+            LIMIT ? OFFSET ?
+        `, { 
+            replacements: [...params, limit, offset] 
+        });
+
+        res.json({
+            success: true,
+            data: houses,
+            pagination: {
+                total,
+                page: parseInt(page),
+                pageSize: limit,
+                totalPages: Math.ceil(total / limit)
+            }
+        });
+    } catch (error) {
+        console.error('❌ [Admin Houses] Error:', error);
+        res.status(500).json({
+            success: false,
+            message: error.message
+        });
+    }
+});
+
+// Get pending houses (chờ duyệt)
+router.get('/admin/houses/pending', requireAdminAPI, async (req, res) => {
+    try {
+        const [houses] = await sequelize.query(`
+            SELECT 
+                h.*,
+                u.FullName as OwnerName,
+                u.Email as OwnerEmail,
+                u.PhoneNumber as OwnerPhone
+            FROM houses h
+            LEFT JOIN users u ON h.OwnerID = u.UserID
+            WHERE h.ApprovalStatus = 'Pending'
+            ORDER BY h.createdAt DESC
+        `);
+
+        res.json({
+            success: true,
+            count: houses.length,
+            data: houses
+        });
+    } catch (error) {
+        console.error('❌ [Admin Pending Houses] Error:', error);
+        res.status(500).json({
+            success: false,
+            message: error.message
+        });
+    }
+});
+
+// Approve house
+router.put('/admin/houses/:id/approve', requireAdminAPI, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const adminId = req.user.userId || req.user.userid;
+
+        // Check if house exists
+        const [house] = await sequelize.query(
+            'SELECT * FROM houses WHERE HouseID = ?',
+            { replacements: [id] }
+        );
+
+        if (!house || house.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'Không tìm thấy nhà'
+            });
+        }
+
+        // Update approval status
+        await sequelize.query(`
+            UPDATE houses 
+            SET ApprovalStatus = 'Approved',
+                ApprovedBy = ?,
+                ApprovedAt = NOW(),
+                RejectionReason = NULL
+            WHERE HouseID = ?
+        `, { replacements: [adminId, id] });
+
+        // TODO: Send notification to owner
+
+        res.json({
+            success: true,
+            message: 'Đã duyệt bài đăng thành công'
+        });
+    } catch (error) {
+        console.error('❌ [Admin Approve House] Error:', error);
+        res.status(500).json({
+            success: false,
+            message: error.message
+        });
+    }
+});
+
+// Reject house
+router.put('/admin/houses/:id/reject', requireAdminAPI, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { reason } = req.body;
+        const adminId = req.user.userId || req.user.userid;
+
+        if (!reason) {
+            return res.status(400).json({
+                success: false,
+                message: 'Vui lòng nhập lý do từ chối'
+            });
+        }
+
+        // Check if house exists
+        const [house] = await sequelize.query(
+            'SELECT * FROM houses WHERE HouseID = ?',
+            { replacements: [id] }
+        );
+
+        if (!house || house.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'Không tìm thấy nhà'
+            });
+        }
+
+        // Update rejection
+        await sequelize.query(`
+            UPDATE houses 
+            SET ApprovalStatus = 'Rejected',
+                RejectionReason = ?,
+                ApprovedBy = ?,
+                ApprovedAt = NOW()
+            WHERE HouseID = ?
+        `, { replacements: [reason, adminId, id] });
+
+        // TODO: Send notification to owner with rejection reason
+
+        res.json({
+            success: true,
+            message: 'Đã từ chối bài đăng'
+        });
+    } catch (error) {
+        console.error('❌ [Admin Reject House] Error:', error);
+        res.status(500).json({
+            success: false,
+            message: error.message
+        });
+    }
+});
+
+// Delete house (admin override)
+router.delete('/admin/houses/:id', requireAdminAPI, async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        // Check if house exists
+        const [house] = await sequelize.query(
+            'SELECT * FROM houses WHERE HouseID = ?',
+            { replacements: [id] }
+        );
+
+        if (!house || house.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'Không tìm thấy nhà'
+            });
+        }
+
+        // Delete house (cascade will delete images)
+        await sequelize.query('DELETE FROM houses WHERE HouseID = ?', {
+            replacements: [id]
+        });
+
+        res.json({
+            success: true,
+            message: 'Đã xóa nhà thành công'
+        });
+    } catch (error) {
+        console.error('❌ [Admin Delete House] Error:', error);
+        res.status(500).json({
+            success: false,
+            message: error.message
+        });
+    }
+});
+
 module.exports = router;

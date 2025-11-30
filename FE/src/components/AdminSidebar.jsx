@@ -65,6 +65,13 @@ export default function AdminSidebar() {
         </Link>
         
         <Link 
+          to="/admin/houses" 
+          className={`menu-item ${isActive('/admin/houses') ? 'active' : ''}`}
+        >
+          <i className="fas fa-home"></i> Quản lý Nhà
+        </Link>
+        
+        <Link 
           to="/admin/seller-requests" 
           className={`menu-item ${isActive('/admin/seller-requests') ? 'active' : ''}`}
         >

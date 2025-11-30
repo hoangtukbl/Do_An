@@ -24,6 +24,7 @@ import TestLab from "./pages/TestLab.jsx";
 import AdminDashboard from "./pages/Admin/Dashboard.jsx";
 import AdminUsers from "./pages/Admin/Users.jsx";
 import AdminPosts from "./pages/Admin/Posts.jsx";
+import AdminHouses from "./pages/Admin/Houses.jsx";
 import SellerRequests from "./pages/Admin/SellerRequests.jsx";
 import Analytics from "./pages/Admin/Analytics.jsx";
 import AdminStaff from "./pages/Admin/Staff.jsx";
@@ -162,6 +163,7 @@ export default function App() {
           <Route path="/admin/dashboard" element={<ProtectedRoute requiredRole="Admin"><AdminDashboard /></ProtectedRoute>} />
           <Route path="/admin/users" element={<ProtectedRoute requiredRole="Admin"><AdminUsers /></ProtectedRoute>} />
           <Route path="/admin/posts" element={<ProtectedRoute requiredRole="Admin"><AdminPosts /></ProtectedRoute>} />
+          <Route path="/admin/houses" element={<ProtectedRoute requiredRole="Admin"><AdminHouses /></ProtectedRoute>} />
           <Route path="/admin/seller-requests" element={<ProtectedRoute requiredRole="Admin"><SellerRequests /></ProtectedRoute>} />
           <Route path="/admin/analytics" element={<ProtectedRoute requiredRole="Admin"><Analytics /></ProtectedRoute>} />
           <Route path="/admin/activities" element={<ProtectedRoute requiredRole="Admin"><Activities /></ProtectedRoute>} />
