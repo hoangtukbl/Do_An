@@ -939,6 +939,134 @@ router.put('/admin/houses/:id/reject', requireAdminAPI, async (req, res) => {
     }
 });
 
+// Get house detail with images and owner info
+router.get('/admin/houses/:id', requireAdminAPI, async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        // Get house with images and owner info
+        const [house] = await sequelize.query(`
+            SELECT 
+                h.*,
+                u.FullName as OwnerName,
+                u.Email as OwnerEmail,
+                u.PhoneNumber as OwnerPhone,
+                approver.FullName as ApproverName
+            FROM houses h
+            LEFT JOIN users u ON h.OwnerID = u.UserID
+            LEFT JOIN users approver ON h.ApprovedBy = approver.UserID
+            WHERE h.HouseID = ?
+        `, { replacements: [id] });
+
+        if (!house || house.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'Không tìm thấy nhà'
+            });
+        }
+
+        // Get images
+        const [images] = await sequelize.query(`
+            SELECT ImageID, HouseID, FileName, CloudPath, DriveFileID, IsCover, CreatedAt
+            FROM houseimages
+            WHERE HouseID = ?
+            ORDER BY IsCover DESC, CreatedAt DESC
+        `, { replacements: [id] });
+
+        res.json({
+            success: true,
+            house: house[0],
+            images: images || []
+        });
+    } catch (error) {
+        console.error('❌ [Admin Get House Detail] Error:', error);
+        res.status(500).json({
+            success: false,
+            message: error.message
+        });
+    }
+});
+
+// Update house information
+router.put('/admin/houses/:id', requireAdminAPI, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const {
+            Title,
+            Description,
+            Address,
+            Price,
+            Bedrooms,
+            Bathrooms,
+            Area,
+            HouseType,
+            Status,
+            Orientation
+        } = req.body;
+
+        // Check if house exists
+        const [house] = await sequelize.query(
+            'SELECT * FROM houses WHERE HouseID = ?',
+            { replacements: [id] }
+        );
+
+        if (!house || house.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'Không tìm thấy nhà'
+            });
+        }
+
+        // Build update query dynamically
+        const updates = [];
+        const values = [];
+
+        if (Title !== undefined) { updates.push('Title = ?'); values.push(Title); }
+        if (Description !== undefined) { updates.push('Description = ?'); values.push(Description); }
+        if (Address !== undefined) { updates.push('Address = ?'); values.push(Address); }
+        if (Price !== undefined) { updates.push('Price = ?'); values.push(Price); }
+        if (Bedrooms !== undefined) { updates.push('Bedrooms = ?'); values.push(Bedrooms); }
+        if (Bathrooms !== undefined) { updates.push('Bathrooms = ?'); values.push(Bathrooms); }
+        if (Area !== undefined) { updates.push('Area = ?'); values.push(Area); }
+        if (HouseType !== undefined) { updates.push('HouseType = ?'); values.push(HouseType); }
+        if (Status !== undefined) { updates.push('Status = ?'); values.push(Status); }
+        if (Orientation !== undefined) { updates.push('Orientation = ?'); values.push(Orientation); }
+
+        if (updates.length === 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'Không có thông tin cần cập nhật'
+            });
+        }
+
+        updates.push('updatedAt = NOW()');
+        values.push(id);
+
+        await sequelize.query(
+            `UPDATE houses SET ${updates.join(', ')} WHERE HouseID = ?`,
+            { replacements: values }
+        );
+
+        // Get updated house
+        const [updatedHouse] = await sequelize.query(
+            'SELECT * FROM houses WHERE HouseID = ?',
+            { replacements: [id] }
+        );
+
+        res.json({
+            success: true,
+            message: 'Cập nhật thông tin nhà thành công',
+            house: updatedHouse[0]
+        });
+    } catch (error) {
+        console.error('❌ [Admin Update House] Error:', error);
+        res.status(500).json({
+            success: false,
+            message: error.message
+        });
+    }
+});
+
 // Delete house (admin override)
 router.delete('/admin/houses/:id', requireAdminAPI, async (req, res) => {
     try {
@@ -968,6 +1096,133 @@ router.delete('/admin/houses/:id', requireAdminAPI, async (req, res) => {
         });
     } catch (error) {
         console.error('❌ [Admin Delete House] Error:', error);
+        res.status(500).json({
+            success: false,
+            message: error.message
+        });
+    }
+});
+
+// Delete house image
+router.delete('/admin/houses/:houseId/images/:imageId', requireAdminAPI, async (req, res) => {
+    try {
+        const { houseId, imageId } = req.params;
+
+        // Check if image exists
+        const [image] = await sequelize.query(
+            'SELECT * FROM houseimages WHERE ImageID = ? AND HouseID = ?',
+            { replacements: [imageId, houseId] }
+        );
+
+        if (!image || image.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'Không tìm thấy hình ảnh'
+            });
+        }
+
+        // Delete image
+        await sequelize.query('DELETE FROM houseimages WHERE ImageID = ?', {
+            replacements: [imageId]
+        });
+
+        res.json({
+            success: true,
+            message: 'Đã xóa hình ảnh thành công'
+        });
+    } catch (error) {
+        console.error('❌ [Admin Delete House Image] Error:', error);
+        res.status(500).json({
+            success: false,
+            message: error.message
+        });
+    }
+});
+
+// Set cover image
+router.put('/admin/houses/:houseId/images/:imageId/set-cover', requireAdminAPI, async (req, res) => {
+    try {
+        const { houseId, imageId } = req.params;
+
+        // Check if image exists
+        const [image] = await sequelize.query(
+            'SELECT * FROM houseimages WHERE ImageID = ? AND HouseID = ?',
+            { replacements: [imageId, houseId] }
+        );
+
+        if (!image || image.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'Không tìm thấy hình ảnh'
+            });
+        }
+
+        // Remove cover from all images of this house
+        await sequelize.query(
+            'UPDATE houseimages SET IsCover = 0 WHERE HouseID = ?',
+            { replacements: [houseId] }
+        );
+
+        // Set this image as cover
+        await sequelize.query(
+            'UPDATE houseimages SET IsCover = 1 WHERE ImageID = ?',
+            { replacements: [imageId] }
+        );
+
+        res.json({
+            success: true,
+            message: 'Đã đặt ảnh làm ảnh bìa'
+        });
+    } catch (error) {
+        console.error('❌ [Admin Set Cover Image] Error:', error);
+        res.status(500).json({
+            success: false,
+            message: error.message
+        });
+    }
+});
+
+// Quick change house status
+router.put('/admin/houses/:id/status', requireAdminAPI, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { status } = req.body;
+
+        // Validate status
+        const validStatuses = ['Available', 'Sold', 'Rented'];
+        if (!validStatuses.includes(status)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Trạng thái không hợp lệ. Chỉ chấp nhận: Available, Sold, Rented'
+            });
+        }
+
+        // Check if house exists
+        const [house] = await sequelize.query(
+            'SELECT * FROM houses WHERE HouseID = ?',
+            { replacements: [id] }
+        );
+
+        if (!house || house.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'Không tìm thấy nhà'
+            });
+        }
+
+        // Update status
+        await sequelize.query(
+            'UPDATE houses SET Status = ?, updatedAt = NOW() WHERE HouseID = ?',
+            { replacements: [status, id] }
+        );
+
+        res.json({
+            success: true,
+            message: `Đã cập nhật trạng thái thành ${status}`,
+            status: status
+        });
+    } catch (error) {
+        console.error('❌ [Admin Change House Status] Error:', error);
         res.status(500).json({
             success: false,
             message: error.message

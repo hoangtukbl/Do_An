@@ -6,17 +6,28 @@ export default function AdminHouses() {
   const [houses, setHouses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState('All'); // All, Pending, Approved, Rejected
+  const [filterHouseStatus, setFilterHouseStatus] = useState('All'); // All, Available, Sold, Rented
+  const [searchQuery, setSearchQuery] = useState('');
+  const [priceMin, setPriceMin] = useState('');
+  const [priceMax, setPriceMax] = useState('');
+  const [areaMin, setAreaMin] = useState('');
+  const [areaMax, setAreaMax] = useState('');
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalHouses, setTotalHouses] = useState(0);
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [selectedHouse, setSelectedHouse] = useState(null);
   const [rejectReason, setRejectReason] = useState('');
+  const [showDetailModal, setShowDetailModal] = useState(false);
+  const [houseDetail, setHouseDetail] = useState(null);
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [editForm, setEditForm] = useState({});
   const pageSize = 10;
 
   useEffect(() => {
     fetchHouses();
-  }, [filterStatus, currentPage]);
+  }, [filterStatus, filterHouseStatus, currentPage]);
 
   const fetchHouses = async () => {
     setLoading(true);
@@ -28,19 +39,67 @@ export default function AdminHouses() {
         url += `&approvalStatus=${filterStatus}`;
       }
       
+      if (filterHouseStatus !== 'All') {
+        url += `&status=${filterHouseStatus}`;
+      }
+      
       const response = await axios.get(url, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       
-      setHouses(response.data.data || []);
+      let data = response.data.data || [];
+      
+      // Client-side filtering for search and price/area
+      if (searchQuery) {
+        const query = searchQuery.toLowerCase();
+        data = data.filter(house =>
+          house.Title?.toLowerCase().includes(query) ||
+          house.Address?.toLowerCase().includes(query) ||
+          house.HouseID?.toString().includes(query)
+        );
+      }
+      
+      if (priceMin) {
+        data = data.filter(house => house.Price >= parseInt(priceMin));
+      }
+      
+      if (priceMax) {
+        data = data.filter(house => house.Price <= parseInt(priceMax));
+      }
+      
+      if (areaMin) {
+        data = data.filter(house => house.Area >= parseFloat(areaMin));
+      }
+      
+      if (areaMax) {
+        data = data.filter(house => house.Area <= parseFloat(areaMax));
+      }
+      
+      setHouses(data);
       setTotalPages(response.data.totalPages || 1);
-      setTotalHouses(response.data.total || 0);
+      setTotalHouses(data.length);
     } catch (error) {
       console.error('Error fetching houses:', error);
       alert('Lỗi khi tải danh sách nhà');
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleSearch = () => {
+    setCurrentPage(1);
+    fetchHouses();
+  };
+
+  const handleClearFilters = () => {
+    setSearchQuery('');
+    setPriceMin('');
+    setPriceMax('');
+    setAreaMin('');
+    setAreaMax('');
+    setFilterStatus('All');
+    setFilterHouseStatus('All');
+    setCurrentPage(1);
   };
 
   const handleApprove = async (houseId) => {
@@ -106,6 +165,102 @@ export default function AdminHouses() {
     } catch (error) {
       console.error('Error deleting house:', error);
       alert('Lỗi khi xóa nhà: ' + (error.response?.data?.message || error.message));
+    }
+  };
+
+  const handleViewDetail = async (houseId) => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await axios.get(
+        `http://localhost:3001/api/admin/houses/${houseId}`,
+        { headers: { 'Authorization': `Bearer ${token}` } }
+      );
+      
+      setHouseDetail(response.data);
+      setEditForm(response.data.house);
+      setIsEditMode(false);
+      setShowDetailModal(true);
+    } catch (error) {
+      console.error('Error fetching house detail:', error);
+      alert('Lỗi khi tải thông tin nhà: ' + (error.response?.data?.message || error.message));
+    }
+  };
+
+  const handleEditSubmit = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      await axios.put(
+        `http://localhost:3001/api/admin/houses/${houseDetail.house.HouseID}`,
+        editForm,
+        { headers: { 'Authorization': `Bearer ${token}` } }
+      );
+      
+      alert('Cập nhật thông tin nhà thành công!');
+      setShowDetailModal(false);
+      fetchHouses();
+    } catch (error) {
+      console.error('Error updating house:', error);
+      alert('Lỗi khi cập nhật: ' + (error.response?.data?.message || error.message));
+    }
+  };
+
+  const handleDeleteImage = async (imageId) => {
+    if (!confirm('Bạn có chắc muốn xóa hình ảnh này?')) return;
+    
+    try {
+      const token = localStorage.getItem('token');
+      await axios.delete(
+        `http://localhost:3001/api/admin/houses/${houseDetail.house.HouseID}/images/${imageId}`,
+        { headers: { 'Authorization': `Bearer ${token}` } }
+      );
+      
+      alert('Đã xóa hình ảnh thành công!');
+      // Reload detail
+      handleViewDetail(houseDetail.house.HouseID);
+    } catch (error) {
+      console.error('Error deleting image:', error);
+      alert('Lỗi khi xóa hình ảnh: ' + (error.response?.data?.message || error.message));
+    }
+  };
+
+  const handleSetCoverImage = async (imageId) => {
+    try {
+      const token = localStorage.getItem('token');
+      await axios.put(
+        `http://localhost:3001/api/admin/houses/${houseDetail.house.HouseID}/images/${imageId}/set-cover`,
+        {},
+        { headers: { 'Authorization': `Bearer ${token}` } }
+      );
+      
+      alert('Đã đặt làm ảnh bìa!');
+      // Reload detail
+      handleViewDetail(houseDetail.house.HouseID);
+    } catch (error) {
+      console.error('Error setting cover image:', error);
+      alert('Lỗi khi đặt ảnh bìa: ' + (error.response?.data?.message || error.message));
+    }
+  };
+
+  const handleQuickStatusChange = async (houseId, newStatus) => {
+    if (!confirm(`Bạn có chắc muốn đổi trạng thái thành "${newStatus}"?`)) return;
+    
+    try {
+      const token = localStorage.getItem('token');
+      await axios.put(
+        `http://localhost:3001/api/admin/houses/${houseId}/status`,
+        { status: newStatus },
+        { headers: { 'Authorization': `Bearer ${token}` } }
+      );
+      
+      alert(`Đã đổi trạng thái thành ${newStatus}!`);
+      if (showDetailModal) {
+        handleViewDetail(houseId);
+      } else {
+        fetchHouses();
+      }
+    } catch (error) {
+      console.error('Error changing status:', error);
+      alert('Lỗi khi đổi trạng thái: ' + (error.response?.data?.message || error.message));
     }
   };
 
@@ -214,6 +369,119 @@ export default function AdminHouses() {
               ❌ Từ chối
             </button>
           </div>
+
+          {/* Search and Advanced Filters */}
+          <div className="mt-4 space-y-4">
+            {/* Search Bar */}
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
+                placeholder="Tìm kiếm theo tiêu đề, địa chỉ, ID..."
+                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <button
+                onClick={handleSearch}
+                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                🔍 Tìm kiếm
+              </button>
+              <button
+                onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
+                className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
+              >
+                {showAdvancedFilters ? '▲ Ẩn bộ lọc' : '▼ Bộ lọc nâng cao'}
+              </button>
+            </div>
+
+            {/* Advanced Filters Panel */}
+            {showAdvancedFilters && (
+              <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {/* Price Range */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      💰 Khoảng giá (VNĐ)
+                    </label>
+                    <div className="flex gap-2">
+                      <input
+                        type="number"
+                        value={priceMin}
+                        onChange={(e) => setPriceMin(e.target.value)}
+                        placeholder="Từ"
+                        className="w-1/2 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                      <input
+                        type="number"
+                        value={priceMax}
+                        onChange={(e) => setPriceMax(e.target.value)}
+                        placeholder="Đến"
+                        className="w-1/2 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Area Range */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      📐 Diện tích (m²)
+                    </label>
+                    <div className="flex gap-2">
+                      <input
+                        type="number"
+                        value={areaMin}
+                        onChange={(e) => setAreaMin(e.target.value)}
+                        placeholder="Từ"
+                        className="w-1/2 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                      <input
+                        type="number"
+                        value={areaMax}
+                        onChange={(e) => setAreaMax(e.target.value)}
+                        placeholder="Đến"
+                        className="w-1/2 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                  </div>
+
+                  {/* House Status */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      🏠 Trạng thái nhà
+                    </label>
+                    <select
+                      value={filterHouseStatus}
+                      onChange={(e) => setFilterHouseStatus(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="All">Tất cả</option>
+                      <option value="Available">Còn trống</option>
+                      <option value="Sold">Đã bán</option>
+                      <option value="Rented">Đã cho thuê</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Filter Actions */}
+                <div className="flex gap-2 mt-4">
+                  <button
+                    onClick={handleSearch}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                  >
+                    Áp dụng bộ lọc
+                  </button>
+                  <button
+                    onClick={handleClearFilters}
+                    className="px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition-colors"
+                  >
+                    Xóa bộ lọc
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Houses Table */}
@@ -287,6 +555,13 @@ export default function AdminHouses() {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm">
                           <div className="flex gap-2">
+                            <button
+                              onClick={() => handleViewDetail(house.HouseID)}
+                              className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                              title="Xem chi tiết"
+                            >
+                              👁️ Xem
+                            </button>
                             {house.ApprovalStatus === 'Pending' && (
                               <>
                                 <button
@@ -394,6 +669,352 @@ export default function AdminHouses() {
                   Xác nhận từ chối
                 </button>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Detail/Edit Modal */}
+        {showDetailModal && houseDetail && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 overflow-y-auto">
+            <div className="bg-white rounded-lg shadow-xl p-6 max-w-4xl w-full mx-4 my-8">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-2xl font-bold text-gray-900">
+                  Chi tiết nhà #{houseDetail.house.HouseID}
+                </h3>
+                <button
+                  onClick={() => setShowDetailModal(false)}
+                  className="text-gray-500 hover:text-gray-700"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {!isEditMode ? (
+                // View Mode
+                <div className="space-y-4">
+                  {/* Status & Actions */}
+                  <div className="pb-4 border-b">
+                    <div className="flex gap-4 items-center mb-3">
+                      {getStatusBadge(houseDetail.house.ApprovalStatus)}
+                      <span className="px-3 py-1 bg-gray-100 text-gray-800 rounded-full text-sm font-medium">
+                        {houseDetail.house.Status}
+                      </span>
+                      <button
+                        onClick={() => setIsEditMode(true)}
+                        className="ml-auto px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                      >
+                        ✏️ Chỉnh sửa
+                      </button>
+                    </div>
+                    
+                    {/* Quick Status Change */}
+                    <div className="flex gap-2 items-center">
+                      <span className="text-sm text-gray-600 font-medium">Đổi trạng thái nhanh:</span>
+                      <button
+                        onClick={() => handleQuickStatusChange(houseDetail.house.HouseID, 'Available')}
+                        className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
+                          houseDetail.house.Status === 'Available'
+                            ? 'bg-green-600 text-white'
+                            : 'bg-green-100 text-green-700 hover:bg-green-200'
+                        }`}
+                        disabled={houseDetail.house.Status === 'Available'}
+                      >
+                        ✓ Available
+                      </button>
+                      <button
+                        onClick={() => handleQuickStatusChange(houseDetail.house.HouseID, 'Sold')}
+                        className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
+                          houseDetail.house.Status === 'Sold'
+                            ? 'bg-red-600 text-white'
+                            : 'bg-red-100 text-red-700 hover:bg-red-200'
+                        }`}
+                        disabled={houseDetail.house.Status === 'Sold'}
+                      >
+                        🏷️ Sold
+                      </button>
+                      <button
+                        onClick={() => handleQuickStatusChange(houseDetail.house.HouseID, 'Rented')}
+                        className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
+                          houseDetail.house.Status === 'Rented'
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-blue-100 text-blue-700 hover:bg-blue-200'
+                        }`}
+                        disabled={houseDetail.house.Status === 'Rented'}
+                      >
+                        🏠 Rented
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Basic Info */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-sm font-medium text-gray-500">Tiêu đề</label>
+                      <p className="text-gray-900">{houseDetail.house.Title}</p>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-gray-500">Loại nhà</label>
+                      <p className="text-gray-900">{houseDetail.house.HouseType || 'N/A'}</p>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-gray-500">Giá</label>
+                      <p className="text-gray-900 font-semibold">{formatPrice(houseDetail.house.Price)}</p>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-gray-500">Diện tích</label>
+                      <p className="text-gray-900">{houseDetail.house.Area} m²</p>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-gray-500">Phòng ngủ</label>
+                      <p className="text-gray-900">{houseDetail.house.Bedrooms} phòng</p>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-gray-500">Phòng tắm</label>
+                      <p className="text-gray-900">{houseDetail.house.Bathrooms} phòng</p>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-gray-500">Hướng nhà</label>
+                      <p className="text-gray-900">{houseDetail.house.Orientation || 'N/A'}</p>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-gray-500">Ngày tạo</label>
+                      <p className="text-gray-900">{formatDate(houseDetail.house.CreatedAt)}</p>
+                    </div>
+                  </div>
+
+                  {/* Address */}
+                  <div>
+                    <label className="text-sm font-medium text-gray-500">Địa chỉ</label>
+                    <p className="text-gray-900">{houseDetail.house.Address}</p>
+                  </div>
+
+                  {/* Description */}
+                  <div>
+                    <label className="text-sm font-medium text-gray-500">Mô tả</label>
+                    <p className="text-gray-900 whitespace-pre-wrap">{houseDetail.house.Description}</p>
+                  </div>
+
+                  {/* Owner Info */}
+                  <div className="bg-gray-50 p-4 rounded-lg">
+                    <h4 className="font-semibold text-gray-900 mb-2">Thông tin chủ nhà</h4>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <span className="text-sm text-gray-500">Tên:</span>
+                        <span className="ml-2 text-gray-900">{houseDetail.house.OwnerName}</span>
+                      </div>
+                      <div>
+                        <span className="text-sm text-gray-500">Email:</span>
+                        <span className="ml-2 text-gray-900">{houseDetail.house.OwnerEmail}</span>
+                      </div>
+                      <div>
+                        <span className="text-sm text-gray-500">SĐT:</span>
+                        <span className="ml-2 text-gray-900">{houseDetail.house.OwnerPhone || 'N/A'}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Approval Info */}
+                  {houseDetail.house.ApprovalStatus !== 'Pending' && (
+                    <div className="bg-blue-50 p-4 rounded-lg">
+                      <h4 className="font-semibold text-gray-900 mb-2">Thông tin duyệt</h4>
+                      {houseDetail.house.ApprovalStatus === 'Approved' && (
+                        <div className="space-y-1">
+                          <p className="text-sm text-gray-600">
+                            Được duyệt bởi: <span className="font-medium">{houseDetail.house.ApproverName || 'N/A'}</span>
+                          </p>
+                          <p className="text-sm text-gray-600">
+                            Thời gian: {formatDate(houseDetail.house.ApprovedAt)}
+                          </p>
+                        </div>
+                      )}
+                      {houseDetail.house.ApprovalStatus === 'Rejected' && (
+                        <p className="text-sm text-red-600">
+                          Lý do từ chối: {houseDetail.house.RejectionReason}
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Images */}
+                  {houseDetail.images && houseDetail.images.length > 0 && (
+                    <div>
+                      <h4 className="font-semibold text-gray-900 mb-3">Hình ảnh ({houseDetail.images.length})</h4>
+                      <div className="grid grid-cols-3 gap-4">
+                        {houseDetail.images.map((img) => (
+                          <div key={img.ImageID} className="relative group border rounded-lg overflow-hidden">
+                            <img
+                              src={img.CloudPath || '/placeholder.jpg'}
+                              alt={img.FileName}
+                              className="w-full h-40 object-cover"
+                            />
+                            {img.IsCover && (
+                              <span className="absolute top-2 left-2 bg-blue-600 text-white text-xs px-2 py-1 rounded">
+                                ⭐ Ảnh bìa
+                              </span>
+                            )}
+                            {/* Action buttons - show on hover */}
+                            <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-50 transition-all flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100">
+                              {!img.IsCover && (
+                                <button
+                                  onClick={() => handleSetCoverImage(img.ImageID)}
+                                  className="px-3 py-1.5 bg-blue-600 text-white text-sm rounded hover:bg-blue-700"
+                                  title="Đặt làm ảnh bìa"
+                                >
+                                  ⭐ Đặt bìa
+                                </button>
+                              )}
+                              <button
+                                onClick={() => handleDeleteImage(img.ImageID)}
+                                className="px-3 py-1.5 bg-red-600 text-white text-sm rounded hover:bg-red-700"
+                                title="Xóa ảnh"
+                              >
+                                🗑️ Xóa
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="mt-3 text-sm text-gray-500">
+                        💡 Hover vào ảnh để hiện nút thao tác
+                      </div>
+                    </div>
+                  )}
+                  
+                  {houseDetail.images && houseDetail.images.length === 0 && (
+                    <div className="text-center py-8 bg-gray-50 rounded-lg">
+                      <p className="text-gray-500">Chưa có hình ảnh nào</p>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                // Edit Mode
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Tiêu đề *</label>
+                      <input
+                        type="text"
+                        value={editForm.Title || ''}
+                        onChange={(e) => setEditForm({...editForm, Title: e.target.value})}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Loại nhà</label>
+                      <input
+                        type="text"
+                        value={editForm.HouseType || ''}
+                        onChange={(e) => setEditForm({...editForm, HouseType: e.target.value})}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Giá *</label>
+                      <input
+                        type="number"
+                        value={editForm.Price || ''}
+                        onChange={(e) => setEditForm({...editForm, Price: e.target.value})}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Diện tích (m²) *</label>
+                      <input
+                        type="number"
+                        value={editForm.Area || ''}
+                        onChange={(e) => setEditForm({...editForm, Area: e.target.value})}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Phòng ngủ</label>
+                      <input
+                        type="number"
+                        value={editForm.Bedrooms || ''}
+                        onChange={(e) => setEditForm({...editForm, Bedrooms: e.target.value})}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Phòng tắm</label>
+                      <input
+                        type="number"
+                        value={editForm.Bathrooms || ''}
+                        onChange={(e) => setEditForm({...editForm, Bathrooms: e.target.value})}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Hướng nhà</label>
+                      <select
+                        value={editForm.Orientation || ''}
+                        onChange={(e) => setEditForm({...editForm, Orientation: e.target.value})}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                      >
+                        <option value="">Chọn hướng</option>
+                        <option value="Đông">Đông</option>
+                        <option value="Tây">Tây</option>
+                        <option value="Nam">Nam</option>
+                        <option value="Bắc">Bắc</option>
+                        <option value="Đông Nam">Đông Nam</option>
+                        <option value="Đông Bắc">Đông Bắc</option>
+                        <option value="Tây Nam">Tây Nam</option>
+                        <option value="Tây Bắc">Tây Bắc</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Trạng thái</label>
+                      <select
+                        value={editForm.Status || ''}
+                        onChange={(e) => setEditForm({...editForm, Status: e.target.value})}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                      >
+                        <option value="Available">Available</option>
+                        <option value="Sold">Sold</option>
+                        <option value="Rented">Rented</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Địa chỉ *</label>
+                    <input
+                      type="text"
+                      value={editForm.Address || ''}
+                      onChange={(e) => setEditForm({...editForm, Address: e.target.value})}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Mô tả</label>
+                    <textarea
+                      value={editForm.Description || ''}
+                      onChange={(e) => setEditForm({...editForm, Description: e.target.value})}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                      rows="6"
+                    />
+                  </div>
+
+                  <div className="flex gap-3 justify-end pt-4 border-t">
+                    <button
+                      onClick={() => {
+                        setIsEditMode(false);
+                        setEditForm(houseDetail.house);
+                      }}
+                      className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+                    >
+                      Hủy
+                    </button>
+                    <button
+                      onClick={handleEditSubmit}
+                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                    >
+                      💾 Lưu thay đổi
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}
