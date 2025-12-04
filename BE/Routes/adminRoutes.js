@@ -1230,4 +1230,238 @@ router.put('/admin/houses/:id/status', requireAdminAPI, async (req, res) => {
     }
 });
 
+// ==================== APPOINTMENT MANAGEMENT ====================
+const appointmentController = require('../controllers/appointment.controller');
+
+// Get all appointments (with filters)
+router.get('/admin/appointments', requireAdminAPI, async (req, res) => {
+    try {
+        const { status, dateFrom, dateTo, page = 1, pageSize = 10 } = req.query;
+        
+        let whereConditions = [];
+        let params = [];
+        
+        if (status && status !== 'All') {
+            whereConditions.push('a.Status = ?');
+            params.push(status);
+        }
+        
+        if (dateFrom) {
+            whereConditions.push('a.CreatedAt >= ?');
+            params.push(dateFrom);
+        }
+        
+        if (dateTo) {
+            whereConditions.push('a.CreatedAt <= ?');
+            params.push(dateTo + ' 23:59:59');
+        }
+        
+        const whereClause = whereConditions.length > 0 
+            ? 'WHERE ' + whereConditions.join(' AND ')
+            : '';
+        
+        const offset = (page - 1) * pageSize;
+        
+        const [appointments] = await sequelize.query(`
+            SELECT 
+                a.AppointmentID,
+                a.Status,
+                a.BuyerDates,
+                a.SellerDates,
+                a.CreatedAt,
+                a.UpdatedAt,
+                buyer.UserID as BuyerID,
+                buyer.FullName as BuyerName,
+                buyer.Email as BuyerEmail,
+                buyer.PhoneNumber as BuyerPhone,
+                seller.UserID as SellerID,
+                seller.FullName as SellerName,
+                seller.Email as SellerEmail,
+                seller.PhoneNumber as SellerPhone
+            FROM appointments a
+            LEFT JOIN users buyer ON a.BuyerID = buyer.UserID
+            LEFT JOIN users seller ON a.SellerID = seller.UserID
+            ${whereClause}
+            ORDER BY a.CreatedAt DESC
+            LIMIT ? OFFSET ?
+        `, {
+            replacements: [...params, parseInt(pageSize), offset],
+            type: sequelize.QueryTypes.SELECT
+        });
+        
+        const [[{ total }]] = await sequelize.query(`
+            SELECT COUNT(*) as total
+            FROM appointments a
+            ${whereClause}
+        `, {
+            replacements: params,
+            type: sequelize.QueryTypes.SELECT
+        });
+        
+        res.json({
+            success: true,
+            data: appointments,
+            total: total,
+            page: parseInt(page),
+            pageSize: parseInt(pageSize),
+            totalPages: Math.ceil(total / pageSize)
+        });
+    } catch (error) {
+        console.error('❌ [Admin Get Appointments] Error:', error);
+        res.status(500).json({
+            success: false,
+            message: error.message
+        });
+    }
+});
+
+// Get appointment statistics
+router.get('/admin/appointments/stats', requireAdminAPI, async (req, res) => {
+    try {
+        const [stats] = await sequelize.query(`
+            SELECT 
+                COUNT(*) as total,
+                SUM(CASE WHEN Status = 'Pending' THEN 1 ELSE 0 END) as pending,
+                SUM(CASE WHEN Status = 'Confirmed' THEN 1 ELSE 0 END) as confirmed,
+                SUM(CASE WHEN Status = 'Cancelled' THEN 1 ELSE 0 END) as cancelled,
+                SUM(CASE WHEN Status = 'Completed' THEN 1 ELSE 0 END) as completed
+            FROM appointments
+        `, {
+            type: sequelize.QueryTypes.SELECT
+        });
+        
+        res.json({
+            success: true,
+            data: stats[0]
+        });
+    } catch (error) {
+        console.error('❌ [Admin Get Appointment Stats] Error:', error);
+        res.status(500).json({
+            success: false,
+            message: error.message
+        });
+    }
+});
+
+// Get appointment detail
+router.get('/admin/appointments/:id', requireAdminAPI, async (req, res) => {
+    try {
+        const { id } = req.params;
+        
+        const [appointments] = await sequelize.query(`
+            SELECT 
+                a.AppointmentID,
+                a.Status,
+                a.BuyerDates,
+                a.SellerDates,
+                a.CreatedAt,
+                a.UpdatedAt,
+                buyer.UserID as BuyerID,
+                buyer.FullName as BuyerName,
+                buyer.Email as BuyerEmail,
+                buyer.PhoneNumber as BuyerPhone,
+                buyer.Role as BuyerRole,
+                seller.UserID as SellerID,
+                seller.FullName as SellerName,
+                seller.Email as SellerEmail,
+                seller.PhoneNumber as SellerPhone,
+                seller.Role as SellerRole
+            FROM appointments a
+            LEFT JOIN users buyer ON a.BuyerID = buyer.UserID
+            LEFT JOIN users seller ON a.SellerID = seller.UserID
+            WHERE a.AppointmentID = ?
+        `, {
+            replacements: [id],
+            type: sequelize.QueryTypes.SELECT
+        });
+        
+        if (appointments.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'Không tìm thấy lịch hẹn'
+            });
+        }
+        
+        res.json({
+            success: true,
+            data: appointments[0]
+        });
+    } catch (error) {
+        console.error('❌ [Admin Get Appointment Detail] Error:', error);
+        res.status(500).json({
+            success: false,
+            message: error.message
+        });
+    }
+});
+
+// Update appointment status
+router.put('/admin/appointments/:id/status', requireAdminAPI, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { status } = req.body;
+        
+        if (!status) {
+            return res.status(400).json({
+                success: false,
+                message: 'Thiếu trạng thái'
+            });
+        }
+        
+        const validStatuses = ['Pending', 'Confirmed', 'Cancelled', 'Completed'];
+        if (!validStatuses.includes(status)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Trạng thái không hợp lệ. Chỉ chấp nhận: ' + validStatuses.join(', ')
+            });
+        }
+        
+        await sequelize.query(`
+            UPDATE appointments 
+            SET Status = ?, UpdatedAt = NOW()
+            WHERE AppointmentID = ?
+        `, {
+            replacements: [status, id],
+            type: sequelize.QueryTypes.UPDATE
+        });
+        
+        res.json({
+            success: true,
+            message: `Đã cập nhật trạng thái thành ${status}`,
+            status: status
+        });
+    } catch (error) {
+        console.error('❌ [Admin Update Appointment Status] Error:', error);
+        res.status(500).json({
+            success: false,
+            message: error.message
+        });
+    }
+});
+
+// Delete appointment
+router.delete('/admin/appointments/:id', requireAdminAPI, async (req, res) => {
+    try {
+        const { id } = req.params;
+        
+        await sequelize.query(`
+            DELETE FROM appointments WHERE AppointmentID = ?
+        `, {
+            replacements: [id],
+            type: sequelize.QueryTypes.DELETE
+        });
+        
+        res.json({
+            success: true,
+            message: 'Đã xóa lịch hẹn thành công'
+        });
+    } catch (error) {
+        console.error('❌ [Admin Delete Appointment] Error:', error);
+        res.status(500).json({
+            success: false,
+            message: error.message
+        });
+    }
+});
+
 module.exports = router;

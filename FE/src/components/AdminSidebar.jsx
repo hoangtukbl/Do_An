@@ -72,6 +72,13 @@ export default function AdminSidebar() {
         </Link>
         
         <Link 
+          to="/admin/appointments" 
+          className={`menu-item ${isActive('/admin/appointments') ? 'active' : ''}`}
+        >
+          <i className="fas fa-calendar-check"></i> Quản lý Lịch hẹn
+        </Link>
+        
+        <Link 
           to="/admin/seller-requests" 
           className={`menu-item ${isActive('/admin/seller-requests') ? 'active' : ''}`}
         >
